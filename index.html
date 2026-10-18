@@ -99,6 +99,7 @@ canvas.fx{position:absolute;inset:0;pointer-events:none;z-index:20}
 @keyframes wob{from{transform:rotate(-8deg) scale(1)}to{transform:rotate(8deg) scale(1.1)}}
 .howto{font-size:14px;line-height:1.4;background:#0005;border-radius:14px;padding:10px 12px;width:100%}
 .mute{position:absolute;right:14px;top:60px;z-index:50;background:#0006;border:0;border-radius:12px;font-size:20px;padding:6px 9px;color:#fff;cursor:pointer}
+.mute.inline{position:static;flex:0 0 72px;font-size:28px;border-radius:18px}
 </style>
 </head>
 <body>
@@ -169,14 +170,10 @@ function newBox(o){
     if(api.state!=="playing"||!cell||cell.dug||cell.flag) return ev;
     if(!generated) gen(cell);
     if(cell.hz){ cell.dug=true; api.hitCell=cell; api.lost=api.haul; api.haul=0; api.state="bust"; ev.push({type:"bust",cell:cell,lost:api.lost}); return ev; }
-    var stack=[cell];
-    while(stack.length){
-      var x=stack.pop(); if(x.dug||x.hz) continue;
-      x.dug=true; x.flag=false; api.dugSafe++;
-      if(x.item){ api.haul+=x.item.val; api.finds.push(x.item); if(!api.best||x.item.val>api.best.val) api.best=x.item; }
-      ev.push({type:"dig",cell:x});
-      if(x.n===0) nb(x).forEach(function(y){ if(!y.dug&&!y.flag&&!y.hz) stack.push(y); });
-    }
+    // exactly ONE square per dig — no cascade, ever
+    cell.dug=true; cell.flag=false; api.dugSafe++;
+    if(cell.item){ api.haul+=cell.item.val; api.finds.push(cell.item); if(!api.best||cell.item.val>api.best.val) api.best=cell.item; }
+    ev.push({type:"dig",cell:cell});
     if(api.dugSafe>=api.safeTotal){ api.bonus=Math.round(api.haul*(o.clearBonus||0)); api.haul+=api.bonus; api.state="cleared"; ev.push({type:"clear",bonus:api.bonus}); }
     return ev;
   };
@@ -278,7 +275,7 @@ BoxDig.mountBox=function(el, opts, done){
     if(rareHit){ SFX.rare(); buzz([30,30,30,30,120]); var q=centerOf(nodes[rareHit.i]); fx.burst(q.x,q.y,36,["#ffe04d","#fff6b0","#f5b400"],4.5); logEl.innerHTML="🤑 "+icon(rareHit.item)+" "+rareHit.item.name+"! "+money(rareHit.item.val); }
     else if(decentHit){ SFX.decent(); buzz(25); logEl.innerHTML=icon(decentHit.item)+" "+decentHit.item.name+" — "+money(decentHit.item.val); }
     else if(coins){ SFX.coin(); var it=ev.filter(function(e){return e.cell&&e.cell.item;}).pop().cell.item; logEl.innerHTML=icon(it)+" "+it.name+" — "+money(it.val); }
-    else logEl.textContent=ev.length>1?"Dusty patch… nothing but dirt.":"Just dust.";
+    else logEl.textContent=cell.n===0?"Just dust — nothing dangerous touching this square.":"Just dust.";
     if(coins) bump();
     render();
     if(last.type==="clear"){ SFX.rare(); buzz([40,40,40,40,40]); logEl.innerHTML="🏆 Box cleared! Bonus +"+money(last.bonus); finish(); }
@@ -311,7 +308,7 @@ BoxDig.start=function(config, onFinish, rootEl){
   muted=!!S.muted;
   function unitCost(u){ var idx=C.units.indexOf(u); if(idx===0 && S.cash<u.cost) return 0; return u.cost; } // broke? first unit is on the house
   function doorStyle(u){ return "--dc:"+u.door[0]+";--dd:"+u.door[1]; }
-  function muteBtn(){ var b=document.createElement("button"); b.className="mute"; b.textContent=muted?"🔇":"🔊"; b.onclick=function(){ muted=!muted; S.muted=muted; save(); b.textContent=muted?"🔇":"🔊"; }; app.appendChild(b); }
+  function muteBtn(host){ var b=document.createElement("button"); b.className=host?"mute inline":"mute"; b.textContent=muted?"🔇":"🔊"; b.onclick=function(){ muted=!muted; S.muted=muted; save(); b.textContent=muted?"🔇":"🔊"; }; (host||app).appendChild(b); }
   function nextUnit(){ return C.units[Math.min(S.unlocked,C.units.length)-1]; }
 
   function title(){
@@ -336,8 +333,8 @@ BoxDig.start=function(config, onFinish, rootEl){
     C.units.forEach(function(u,i){ var locked=i>=S.unlocked, cost=unitCost(u), cant=S.cash<cost;
       h+='<div class="urow'+(locked?' locked':'')+(i===S.unlocked-1?' next':'')+'" data-i="'+i+'"><div class="minidoor" style="'+doorStyle(u)+'"></div><div><div class="nm">'+(locked?'🔒 ':'')+u.name+'</div><div class="ds">'+u.desc+' · '+u.boxes.length+' boxes</div></div>'+
       '<div class="pr">'+(cost===0?'FREE':money(cost))+(cant&&!locked?'<div style="font-size:11px;color:#ff8a7a">need more</div>':'')+(cost===0&&i===0&&u.cost>0?'<div style="font-size:11px">on the house</div>':'')+'</div></div>'; });
-    h+='</div><div class="sub" style="margin-top:auto;font-size:13px">Profit from a unit unlocks the next door. Better doors = bigger treasure, more hazards.</div><button class="btn gray wide" id="uBack" style="margin-top:10px">Back</button></div>';
-    app.innerHTML=h; muteBtn();
+    h+='</div><div class="sub" style="margin-top:auto;font-size:13px">Profit from a unit unlocks the next door. Better doors = bigger treasure, more hazards.</div><div class="row" id="uFoot" style="margin-top:10px"><button class="btn gray" id="uBack" style="flex:1">Back</button></div></div>';
+    app.innerHTML=h; muteBtn(app.querySelector("#uFoot"));
     app.querySelector("#uBack").onclick=title;
     app.querySelectorAll(".urow").forEach(function(r){ r.onclick=function(){ var i=+r.dataset.i, u=C.units[i], cost=unitCost(u); if(i>=S.unlocked||S.cash<cost){ buzz(30); return; }
       S.cash-=cost; S.run={u:i,cost:cost,box:0,results:[]}; save(); unitScreen(true); }; });
